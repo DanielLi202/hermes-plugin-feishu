@@ -1,3 +1,4 @@
+# Hermes v2026.6.19 installer accepts manifest_version 1; values above 1 are rejected.
 manifest_version: 1
 name: hermes-tag
 label: Hermes Tag
