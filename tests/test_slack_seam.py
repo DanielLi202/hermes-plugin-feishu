@@ -96,6 +96,35 @@ class SlackSeamTest(unittest.TestCase):
         self.assertIn("U1: the deadline is Friday", adapter.dispatched[-1].channel_context)
 
 
+
+    def test_slack_reply_media_stub_is_observable_and_tier0_media_still_contextual(self):
+        tmp = tempfile.NamedTemporaryFile(delete=False)
+        tmp.close()
+        os.unlink(tmp.name)
+        media = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        media.write(b"png")
+        media.close()
+        cfg = PlatformConfig({"slack_tag": {"enabled": True, "enabled_chats": ["C1"], "db_path": tmp.name, "media_cache_dir": tmp.name + ".media", "encryption_posture": "plain"}})
+        adapter = adapter_factory(cfg)
+        adapter._bot_user_id = "BOT"
+
+        parent = SlackEvent("", source=SimpleNamespace(chat_id="C1", user_id="U1"), message_id="p1", media_urls=[media.name], media_types=["image/png"])
+        asyncio.run(adapter.handle_message(parent))
+        ask = SlackEvent("<@BOT> 上面这张图是什么", source=SimpleNamespace(chat_id="C1", user_id="U2"), message_id="m2")
+        asyncio.run(adapter.handle_message(ask))
+        self.assertTrue(adapter.dispatched[-1].media_urls)
+        self.assertIn("related media from p1", adapter.dispatched[-1].channel_context)
+
+        buffered_reply = SlackEvent("<@BOT> parent image?", source=SimpleNamespace(chat_id="C1", user_id="U2"), message_id="m3", reply_to_message_id="p1")
+        asyncio.run(adapter.handle_message(buffered_reply))
+        self.assertTrue(adapter.dispatched[-1].media_urls)
+        self.assertEqual(adapter.preflight_status()["metrics"]["slack_reply_media_unavailable"],0)
+
+        reply = SlackEvent("<@BOT> parent image?", source=SimpleNamespace(chat_id="C1", user_id="U2"), message_id="m4", reply_to_message_id="missing-parent")
+        asyncio.run(adapter.handle_message(reply))
+        self.assertEqual(adapter.preflight_status()["metrics"]["slack_reply_media_unavailable"],1)
+
+
 class SlackBaseLoaderTest(unittest.TestCase):
     def test_loader_falls_back_to_gateway_platform(self):
         from hermes_tag.platforms import slack as slack_mod

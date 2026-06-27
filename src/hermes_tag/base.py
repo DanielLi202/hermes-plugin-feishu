@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 from .context import ContextSelector
-from .core import TagConfig as FeishuTagConfig, TagEngine, TagStore as FeishuTagStore
+from .core import TagConfig as FeishuTagConfig, TagEngine, TagStore as FeishuTagStore, near_duplicate_summary
 from .i18n import ENABLE_NOTICE, PROMPT_CONTRACT
 
 HERMES_TAG = "v2026.6.19"
@@ -117,6 +117,7 @@ class TagAdapterMixin:
             }
             for enabled_chat_id in self.tag.enabled_chats
         }
+        degraded = ["session_reset"] if self.store.metric("session_reset_degraded") else []
         return {
             "adapter": type(self).__name__,
             "hermes_tag": HERMES_TAG,
@@ -143,6 +144,9 @@ class TagAdapterMixin:
                 "tier1_memories": self.store.count_tier1(chat_id),
                 "tier1_written": self.store.metric("tier1_written"),
                 "tier1_write_failure": self.store.metric("tier1_write_failure"),
+                "tier1_write_skipped_duplicate": self.store.metric("tier1_write_skipped_duplicate"),
+                "slack_reply_media_unavailable": self.store.metric("slack_reply_media_unavailable"),
+                "session_reset_degraded": self.store.metric("session_reset_degraded"),
                 "command_send_failure": self.store.metric("command_send_failure"),
                 "media_download_success": self.store.metric("media_download_success"),
                 "media_download_failure": self.store.metric("media_download_failure"),
@@ -152,6 +156,7 @@ class TagAdapterMixin:
                 "override_selfcheck_ok": 1,
             },
             "retention": self.retention_table(),
+            **({"degraded": degraded} if degraded else {}),
         }
 
     async def _dispatch_inbound_event(self, event: MessageEvent) -> Any:
@@ -354,6 +359,8 @@ class TagAdapterMixin:
         reply_id = event.reply_to_message_id
         if not reply_id:
             return [], [], [], []
+        if not self._should_fetch_reply_media(event, reply_id):
+            return [], [], [], []
         raw_refs = await self._fetch_reply_media_refs(reply_id)
         urls: list[str] = []
         types: list[str] = []
@@ -380,14 +387,20 @@ class TagAdapterMixin:
                 self.store.inc("media_download_failure")
         return urls, types, placeholders, paths
 
+    def _should_fetch_reply_media(self, event: MessageEvent, reply_id: str) -> bool:
+        return True
+
     def _write_tier1_memory(self, event: MessageEvent, enhanced: MessageEvent, result: Any) -> None:
         try:
             conclusion = _result_text(result)
             if not conclusion:
                 return
-            background = list(getattr(enhanced, "l2_context", []) or [])[:2]
             sources = [event.message_id or ""] + list(getattr(enhanced, "source_message_ids", []) or [])
-            summary = f"question={event.text}; context={'; '.join(background)}; conclusion={conclusion}"
+            summary = f"question={event.text}; conclusion={conclusion}"
+            rows = self.store.tier1_rows(_chat_id(event))
+            if rows and near_duplicate_summary(summary, rows[-1]["summary"]):
+                self.store.inc("tier1_write_skipped_duplicate")
+                return
             self.store.write_tier1(_chat_id(event), summary, _author(event), event.message_id or "", _author(event), [s for s in sources if s])
             self.store.consolidate_tier1(_chat_id(event), self.tag.tier1_max_count)
         except Exception:
@@ -573,11 +586,13 @@ class TagAdapterMixin:
         session_store = getattr(runner, "session_store", None)
         if runner is None or session_store is None or not hasattr(session_store, "reset_session"):
             reason = "gateway runner unavailable"
+            self.store.inc("session_reset_degraded")
             self.store.audit("hermes_session_reset_skipped", _chat_id(event), reason)
             return {"ok": False, "reason": reason}
         source = getattr(event, "source", None)
         if source is None:
             reason = "event source unavailable"
+            self.store.inc("session_reset_degraded")
             self.store.audit("hermes_session_reset_skipped", _chat_id(event), reason)
             return {"ok": False, "reason": reason}
         try:
@@ -606,6 +621,7 @@ class TagAdapterMixin:
             return {"ok": bool(new_entry), "reason": "" if new_entry else "session entry unavailable", "session_key": session_key, "old_session_id": old_session_id, "new_session_id": new_session_id}
         except Exception as exc:
             reason = f"{type(exc).__name__}: {exc}"
+            self.store.inc("session_reset_degraded")
             self.store.audit("hermes_session_reset_failed", _chat_id(event), reason)
             return {"ok": False, "reason": reason}
 

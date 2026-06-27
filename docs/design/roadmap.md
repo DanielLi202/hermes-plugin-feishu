@@ -205,19 +205,21 @@ what it stores. Pure shared-core; zero platform code; zero invariant relaxation.
   (evicted by TTL/count, or posted before the bot joined) — the media analogue of
   F2's evicted-parent text gap.
   - **Default (ships now):** make the edge case observable, not silently empty —
-    increment `slack_reply_media_unavailable` in the Slack `_fetch_reply_media_refs`
-    no-op when called with a `reply_id` (**Layer B**), and surface it in
-    `preflight_status` (**Layer A**). **Do not** add a "Slack is text-only" README
-    caveat — that would be false; if anything, document that Slack media works for
-    current/recent/buffered context and only evicted-parent reply media is
-    unfetched.
+    increment `slack_reply_media_unavailable` only when an explicit Slack reply's
+    parent is absent from Tier-0 (**Layer B**), and surface it in
+    `preflight_status` (**Layer A**). Buffered-parent media must not increment the
+    metric because that media can still reach the model through Tier-0. **Do not**
+    add a "Slack is text-only" README caveat — that would be false; if anything,
+    document that Slack media works for current/recent/buffered context and only
+    evicted-parent reply media is unfetched.
   - **Optional follow-up (Layer B, deferred, gated on `files:read`):** real
     parent-file fetch (`conversations.replies` + `url_private`) reusing the existing
     `0o600`/eviction path, only when the parent is absent from Tier-0.
   *Acceptance:* a Slack reply whose parent is **not** in Tier-0 increments
-  `slack_reply_media_unavailable` (the no-op ran); a Slack message/deictic reference
-  whose image **is** in Tier-0 still carries that media to the model (regression
-  guard proving Slack is not text-only); base Slack platform still works.
+  `slack_reply_media_unavailable`; a Slack reply/message/deictic reference whose
+  image **is** in Tier-0 still carries that media to the model and does **not**
+  increment the metric (regression guard proving Slack is not text-only); base
+  Slack platform still works.
 - **F7 · Session-reset degradation signal.** *Value: low (ops).* **Layer A**
   (`base._reset_gateway_session`, `preflight_status`). Add `session_reset_degraded`
   metric + preflight flag when the Hermes runner internals aren't reachable; keep

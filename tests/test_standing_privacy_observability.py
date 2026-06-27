@@ -199,6 +199,37 @@ class StandingPrivacyV2Test(unittest.TestCase):
         asyncio.run(a._dispatch_inbound_event(ev("q","m"))); send_reply(a, "m", "answer")
         self.assertEqual(a.preflight_status()["metrics"]["tier1_write_failure"],1)
 
+
+    def test_session_reset_degraded_metric_when_runner_missing(self):
+        a,_=self.adapter()
+        result=asyncio.run(a._dispatch_inbound_event(ev("/tag admin clear","clear")))
+        self.assertFalse(result["session_reset"])
+        self.assertEqual(result["session_reset_reason"],"gateway runner unavailable")
+        self.assertEqual(a.preflight_status()["metrics"]["session_reset_degraded"],1)
+        self.assertEqual(a.preflight_status()["degraded"],["session_reset"])
+
+    def test_session_reset_success_has_no_degraded_flag(self):
+        a,_=self.adapter()
+        runner=Runner(); a._message_handler=runner.handle
+        asyncio.run(a._dispatch_inbound_event(ev("/tag admin clear","clear")))
+        self.assertNotIn("degraded", a.preflight_status())
+
+    def test_standing_job_id_uses_uuid_suffix(self):
+        import re
+        import hermes_tag.core as core
+        a,_=self.adapter()
+        values=iter([SimpleNamespace(hex="a"*32), SimpleNamespace(hex="b"*32)])
+        old=core.uuid4
+        core.uuid4=lambda: next(values)
+        try:
+            first=a.store.create_standing_job("chat-a","d","* * * * *","UTC","cron-1","Alice")
+            second=a.store.create_standing_job("chat-a","d","* * * * *","UTC","cron-2","Alice")
+        finally:
+            core.uuid4=old
+        self.assertRegex(first, r"^job-\d+-a{12}$")
+        self.assertRegex(second, r"^job-\d+-b{12}$")
+        self.assertNotEqual(first, second)
+
     def test_no_full_sensitive_body_in_audit(self):
         a,_=self.adapter()
         asyncio.run(a._dispatch_inbound_event(ev("SECRET_TOKEN full body","t",at=False)))

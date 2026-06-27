@@ -157,6 +157,12 @@ class SlackTagAdapter(TagAdapterMixin, SlackAdapter):
         text = " ".join(filter(None, [getattr(event, "text", "") or "", _raw_slack_text(event)]))
         return bool(bot and f"<@{bot}>" in text)
 
+    def _should_fetch_reply_media(self, event: MessageEvent, reply_id: str) -> bool:
+        if any(row["message_id"] == reply_id for row in self.store.tier0_rows(_chat_id_from(event))):
+            return False
+        self.store.inc("slack_reply_media_unavailable")
+        return False
+
     async def _fetch_reply_media_refs(self, reply_id: str) -> list[dict]:
         return []
 

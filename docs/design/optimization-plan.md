@@ -207,22 +207,19 @@ Each fix: **problem → change → files → invariants touched → acceptance t
 ### F6 (P1) — Make Slack media-evidence behavior explicit and honest
 
 - **Problem.** Slack `_fetch_reply_media_refs` returns `[]` and `_download_media`
-  returns `("","")` (`slack.py:160-164`), so `focused_reply`/`deictic_recent`
-  *media* evidence is a silent no-op on Slack. The README scope table is
-  **platform-agnostic** ("nearest recent media") and so does not say Slack lacks
-  it — a Slack operator can reasonably expect media evidence and get none, with no
-  signal. This is a documentation/observability gap, not a correctness bug.
+  returns `("","")` (`slack.py:160-164`), so an explicit reply to a parent no
+  longer present in Tier-0 has no parent-media fetch on Slack. Slack is **not**
+  text-only: current-message, deictic/recent, and buffered-parent media already
+  flow through Tier-0. This is a narrow observability gap for evicted-parent reply
+  media, not a general media capability gap.
 - **Change (default — ships now, zero dependency on unverified internals).** Make
-  the no-op explicit and *detectable*: increment a `slack_reply_media_unsupported`
-  metric **inside the Slack `_fetch_reply_media_refs` no-op itself** — i.e.
-  whenever it is invoked with a `reply_id` (which only happens when
-  `event.reply_to_message_id` is set, via `_load_reply_media`). The honest,
-  stub-visible signal is "a Slack reply occurred and parent-media cannot be
-  fetched," NOT "the parent had media" (the latter is undetectable without the
-  deferred lookup, so it is explicitly not claimed). Surface the metric in
-  `preflight_status` and add a one-line README/scope-table caveat that Slack
-  evidence is **text-only** (Feishu carries media). No change to evidence sent to
-  the model.
+  the no-op explicit and *detectable*: increment a `slack_reply_media_unavailable`
+  metric only when an explicit Slack reply's parent is absent from Tier-0. The
+  honest, stub-visible signal is "a Slack reply occurred and parent-media cannot
+  be fetched from Tier-0," NOT "every reply lacks media." Buffered-parent media
+  must not increment the metric because it can still reach the model through
+  Tier-0. Surface the metric in `preflight_status`; do not add a Slack text-only
+  caveat, because it is false. No change to evidence sent to the model.
 - **Change (OPTIONAL follow-up — explicitly out of this plan's default scope).**
   Implement real Slack reply-media only **after verifying** the base Slack
   adapter's client exposes parent-message + `files[]` access (e.g.
@@ -234,15 +231,14 @@ Each fix: **problem → change → files → invariants touched → acceptance t
   files to the model, and it is deferred and gated, so the **default plan has no
   privacy delta**.
 - **Files.** `src/hermes_tag/platforms/slack.py`, `src/hermes_tag/base.py`
-  (`preflight_status`), `README.md`/`README.zh-CN.md` (scope-table caveat).
+  (`preflight_status`).
 - **Invariants.** I5/I6/I7: default change is observability + docs only; sends
   nothing new to the model; no new required scope.
-- **Acceptance.** Dispatching a Slack event with `reply_to_message_id` set
-  increments `slack_reply_media_unsupported` (the no-op path ran) and
-  `channel_context` carries no Slack media; the metric appears in
-  `preflight_status`; the README/scope table states Slack is text-only; the base
-  Slack platform still works. (Optional follow-up has its own acceptance if/when
-  undertaken.)
+- **Acceptance.** Dispatching a Slack event with `reply_to_message_id` whose
+  parent is absent from Tier-0 increments `slack_reply_media_unavailable`;
+  buffered-parent/Tier-0 Slack media still reaches the model and does not increment
+  the metric; the metric appears in `preflight_status`; the base Slack platform
+  still works. (Optional follow-up has its own acceptance if/when undertaken.)
 
 ### F7 (P2) — Loud-fail the private-Hermes session-reset coupling
 
@@ -331,8 +327,9 @@ All tests run in stub mode (`HERMES_PLUGIN_FEISHU_USE_STUBS=1`,
   (question-relevant candidate outranks newer unrelated one; thread/author still
   dominate; focused_reply unchanged), F4 (high-value memory survives; `len(summary)
   <= CONSOLIDATED_SUMMARY_MAX_CHARS`), F5 (duplicate suppressed + metric; distinct
-  written; default-config regression green), F6 (`slack_reply_media_unsupported`
-  metric increments; `channel_context` carries no Slack media), F7
+  written; default-config regression green), F6 (`slack_reply_media_unavailable`
+  increments only for parents absent from Tier-0; buffered Tier-0 Slack media still
+  reaches the model), F7
   (`session_reset_degraded` metric/flag set when runner internals missing; absent
   when present), F9 (two same-arg jobs in one process get distinct ids).
 

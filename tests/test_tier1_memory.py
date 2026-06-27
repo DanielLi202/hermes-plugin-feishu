@@ -120,6 +120,39 @@ class Tier1V2Test(unittest.TestCase):
         self.assertLessEqual(len(rows),2)
         self.assertTrue(all(json.loads(r["source_message_ids"]) for r in rows))
 
+
+    def test_duplicate_tier1_answer_is_skipped_but_distinct_is_written(self):
+        a=FeishuTagAdapter(PlatformConfig(), cfg())
+        asyncio.run(a._dispatch_inbound_event(ev("same question","m1"))); send_reply(a, "m1", "same answer")
+        asyncio.run(a._dispatch_inbound_event(ev("same question","m2"))); send_reply(a, "m2", "same answer")
+        self.assertEqual(a.store.count_tier1("chat-a"),1)
+        self.assertEqual(a.preflight_status()["metrics"]["tier1_write_skipped_duplicate"],1)
+        asyncio.run(a._dispatch_inbound_event(ev("different question","m3"))); send_reply(a, "m3", "different answer")
+        self.assertEqual(a.store.count_tier1("chat-a"),2)
+
+    def test_same_question_different_short_answer_is_not_suppressed(self):
+        a=FeishuTagAdapter(PlatformConfig(), cfg())
+        question="where is the capital city of country france located"
+        asyncio.run(a._dispatch_inbound_event(ev(question,"m1"))); send_reply(a, "m1", "paris")
+        asyncio.run(a._dispatch_inbound_event(ev(question,"m2"))); send_reply(a, "m2", "lyon")
+        self.assertEqual(a.store.count_tier1("chat-a"),2)
+        self.assertEqual(a.preflight_status()["metrics"]["tier1_write_skipped_duplicate"],0)
+
+    def test_consolidation_merges_lowest_value_and_caps_summary(self):
+        a=FeishuTagAdapter(PlatformConfig(), cfg(tier1_max_count=2))
+        a.store.write_tier1("chat-a","low-old "+("x"*2500),"Alice","low-old","Alice",["low-old"],confidence=0.1)
+        a.store.write_tier1("chat-a","high-survives","Alice","high","Alice",["high"],confidence=0.9)
+        a.store.write_tier1("chat-a","low-new","Alice","low-new","Alice",["low-new"],confidence=0.2)
+        a.store.consolidate_tier1("chat-a",2)
+        rows=a.store.tier1_rows("chat-a")
+        summaries=[r["summary"] for r in rows]
+        self.assertEqual(len(rows),2)
+        self.assertTrue(any(s == "high-survives" for s in summaries))
+        self.assertTrue(all(len(s) <= 2000 for s in summaries))
+        merged=next(r for r in rows if r["summary"] != "high-survives")
+        self.assertEqual(json.loads(merged["source_message_ids"]),["low-new","low-old"])
+        self.assertEqual(merged["confidence"],0.2)
+
     def test_budget_drops_tier1_before_l2_background(self):
         a=FeishuTagAdapter(PlatformConfig(), cfg(max_context_chars=55))
         asyncio.run(a._dispatch_inbound_event(ev("memory","mem"))); send_reply(a, "mem", "answer")

@@ -6,9 +6,14 @@ import re
 import sqlite3
 import threading
 import time
+from collections import Counter
+from uuid import uuid4
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any, Protocol
+
+
+CONSOLIDATED_SUMMARY_MAX_CHARS = 2000
 
 
 @dataclass(frozen=True)
@@ -210,19 +215,19 @@ class TagStore:
 
     def consolidate_tier1(self, chat_id: str, max_count: int) -> None:
         while self.count_tier1(chat_id) > max_count:
-            rows = self.tier1_rows(chat_id)[:2]
+            rows = sorted(self.tier1_rows(chat_id), key=lambda r: (r["confidence"], r["created_at"]))[:2]
             if len(rows) < 2:
                 return
             sources: list[str] = []
             for row in rows:
                 sources.extend(json.loads(row["source_message_ids"] or "[]"))
-            summary = "consolidated: " + " | ".join(row["summary"] for row in rows)
+            summary = ("consolidated: " + " | ".join(row["summary"] for row in rows))[:CONSOLIDATED_SUMMARY_MAX_CHARS]
             owner = ",".join(sorted({row["owner"] for row in rows if row["owner"]}))
             with self.lock:
                 self.conn.executemany("DELETE FROM tier1_memories WHERE id=?", [(row["id"],) for row in rows])
                 self.conn.execute(
                     "INSERT INTO tier1_memories(chat_id,summary,owner,trigger_message_id,asked_by,source_message_ids,status,confidence,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                    (chat_id, summary, owner, rows[-1]["trigger_message_id"], owner, json.dumps(sorted(set(sources))), "active", min(row["confidence"] for row in rows), time.time()),
+                    (chat_id, summary, owner, rows[-1]["trigger_message_id"], owner, json.dumps(sorted(set(sources))), "active", max(row["confidence"] for row in rows), time.time()),
                 )
                 self.conn.commit()
 
@@ -237,7 +242,7 @@ class TagStore:
         return changed
 
     def create_standing_job(self, chat_id: str, description: str, schedule: str, timezone_name: str, cron_job_id: str, owner: str) -> str:
-        job_id = f"job-{int(time.time() * 1000)}-{abs(hash((chat_id, description, schedule))) % 10000}"
+        job_id = f"job-{int(time.time() * 1000)}-{uuid4().hex[:12]}"
         with self.lock:
             self.conn.execute(
                 "INSERT INTO standing_jobs(id,chat_id,description,schedule,timezone,cron_job_id,owner,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
@@ -455,6 +460,25 @@ def author_of(event: Any) -> str:
 
 def thread_id_of(event: Any) -> str | None:
     return getattr(getattr(event, "source", None), "thread_id", None) or getattr(event, "thread_id", None)
+
+
+def near_duplicate_summary(new_summary: str, previous_summary: str, threshold: float = 0.9) -> bool:
+    # ponytail: whole-summary overlap is required; matching question prevents swapped-answer false positives.
+    return _summary_question(new_summary) == _summary_question(previous_summary) and _token_overlap(new_summary, previous_summary) >= threshold
+
+
+def _summary_question(summary: str) -> str:
+    match = re.search(r"question=(.*?); conclusion=", summary or "")
+    return match.group(1) if match else summary
+
+
+def _token_overlap(new_text: str, previous_text: str) -> float:
+    tokens = Counter(_tokens(new_text))
+    previous = Counter(_tokens(previous_text))
+    union = tokens | previous
+    if not union:
+        return 0.0
+    return sum((tokens & previous).values()) / sum(union.values())
 
 
 def _lexical_relevance(question: str, evidence: str) -> float:
