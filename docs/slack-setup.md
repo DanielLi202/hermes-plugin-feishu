@@ -2,13 +2,20 @@
 
 The Slack adapter (`SlackTagAdapter`) is additive to the `hermes-tag` plugin: it registers a `slack` platform
 alongside `feishu`, reusing the same tag engine (Tier-0/Tier-1 context, `/tag` commands, ContextSelector).
-It is **code-complete and unit-verified** but **not yet E2E-verified on a live Slack workspace** — that needs a
-Slack app (tokens), which requires Slack web auth. The steps below are the remaining ~10 minutes.
+It is **code-complete and unit-verified**. Live workspace smoke evidence is tracked in `docs/slack-e2e.md`.
 
 ## 1. Create the Slack app (api.slack.com)
 
 Sign in to Slack in a browser, go to **https://api.slack.com/apps → Create New App → From an app manifest**,
-pick the test workspace, and paste this manifest:
+pick the test workspace. After `hermes-tag` is installed/enabled, prefer generating the full manifest from Hermes so plugin slash commands are included:
+
+```sh
+hermes slack manifest --write /tmp/hermes-slack-manifest.json --name "Hermes Tag"
+python docs/slack-manifest-add-tag.py /tmp/hermes-slack-manifest.json
+grep '"/tag"' /tmp/hermes-slack-manifest.json
+```
+
+Paste `/tmp/hermes-slack-manifest.json` into **Features → App Manifest → Edit**. If you need a bootstrap manifest before Hermes is installed, use this minimal one and replace it with the generated manifest after plugin install:
 
 ```yaml
 display_information:
@@ -24,6 +31,7 @@ oauth_config:
       - channels:history
       - channels:read
       - chat:write
+      - commands
       - files:read
       - groups:history
       - groups:read
@@ -50,10 +58,11 @@ settings:
 ```
 
 Then:
-1. **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-…`) = `SLACK_BOT_TOKEN`.
-2. **Basic Information → App-Level Tokens → Generate Token and Scopes** → add scope `connections:write` →
+1. **Save the generated manifest** and reinstall if Slack prompts. Confirm it contains `/tag`; otherwise native `/tag` never reaches Hermes. Restart the gateway afterward so Socket Mode rebuilds its native command matcher with plugin commands.
+2. **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-…`) = `SLACK_BOT_TOKEN`.
+3. **Basic Information → App-Level Tokens → Generate Token and Scopes** → add scope `connections:write` →
    copy the token (`xapp-…`) = `SLACK_APP_TOKEN`.
-3. In the test workspace, create a channel (e.g. `#hermes-tag-test`) and **invite the bot**: `/invite @Hermes Tag`.
+4. In the test workspace, create a channel (e.g. `#hermes-tag-test`) and **invite the bot**: `/invite @Hermes Tag`.
    Copy the channel ID (channel name → About → bottom, `C…`). Copy your own Slack user ID for admin (Profile → ⋮ → Copy member ID, `U…`).
 
 ## 2. Configure + deploy on the box (192.168.10.78, profile shiling-pm)
@@ -98,10 +107,10 @@ Add to `~/.hermes/profiles/shiling-pm/config.yaml` under `platforms:` (sibling o
 
 ## 3. Verify (in #hermes-tag-test)
 
-- `@Hermes Tag hello` → in-thread reply.
+- `@Hermes Tag hello` → main-channel reply when `platforms.slack.reply_in_thread: false`.
 - Post `Background: the deadline is Friday.` (no mention) → then `@Hermes Tag when is the deadline?` → answer uses Friday (Tier-0 ingest + context selection).
 - Reply to a message, then `@Hermes Tag ...` → answer anchored to your message, parent as evidence.
-- `/tag status` (as an admin) → metrics; unmentioned `/tag` → no reply (mention gating).
+- `/tag admin count` (as an admin) → metrics. If Slackbot says `/tag` is invalid, regenerate/save the Hermes Slack manifest after plugin install. If Slack accepts `/tag` but says the app did not respond, restart the gateway with the current `hermes-tag` plugin loaded.
 - Confirm Feishu pilot still works (send a `/tag status` in the Feishu pilot group).
 
 ## Rollback (if anything regresses Feishu)
@@ -112,5 +121,6 @@ cd ~/.hermes/plugins/hermes-tag && git checkout main && hermes --profile shiling
 
 ## Known v1 limitations
 - Reply/parent **media** on Slack is stubbed (`_fetch_reply_media_refs` returns `[]`). Text, mentions, Tier-0
-  context, threading, and `/tag` commands are wired. Slack file/thread media is a follow-up.
+  context, main-channel replies, and `/tag` commands are wired. Slack file/thread media is a follow-up.
 - `receive_all` is hardcoded `True`; gate via `channels:history` scope + `require_mention: false`.
+- Native Slack slash commands require saving the generated Hermes Slack manifest after plugin install; Socket Mode handles delivery after Slack accepts the command.

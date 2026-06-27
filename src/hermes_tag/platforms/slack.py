@@ -96,6 +96,7 @@ def _slack_tag_config(config: Any) -> TagConfig:
     return TagConfig(
         enabled_chats=tuple(data.get("enabled_chats") or ()),
         db_path=str(data.get("db_path") or "slack-tag.sqlite3"),
+        granted_scopes=frozenset(data.get("granted_scopes") or ()),
         encryption_posture=str(data.get("encryption_posture") or "plaintext-db-on-local-disk").strip(),
         max_context_chars=int(data.get("max_context_chars") or 4000),
         max_reply_media_items=int(data.get("max_reply_media_items") or 4),
@@ -106,6 +107,8 @@ def _slack_tag_config(config: Any) -> TagConfig:
         media_cache_dir=data.get("media_cache_dir"),
         admins=tuple(data.get("admins") or ()),
         tier1_pending_ttl_seconds=int(data.get("tier1_pending_ttl_seconds") or 3600),
+        # ponytail: Slack history is bot-visible channel stream, not Feishu im:message.group_msg.
+        tier0_context_enabled=bool(data.get("tier0_context_enabled", True)),
     )
 
 
@@ -124,19 +127,24 @@ class SlackTagAdapter(TagAdapterMixin, SlackAdapter):
         return True
 
     async def handle_message(self, event: MessageEvent) -> Any:
-        if _chat_id_from(event) in self.tag.enabled_chats:
-            return await self.engine.handle_message(event)
-        return await super().handle_message(event)
+        if _chat_id_from(event) not in self.tag.enabled_chats:
+            return await super().handle_message(event)
+        if _is_native_slack_command(event) and not _is_tag_command(event):
+            return await super().handle_message(event)
+        return await self.engine.handle_message(event)
 
     async def dispatch_to_model(self, event: MessageEvent) -> Any:
         return await super().handle_message(event)
 
     def is_mentioned(self, event: MessageEvent) -> bool:
+        if _is_tag_command(event):
+            return True
         source = getattr(event, "source", None)
         if getattr(source, "chat_type", "") == "dm" or getattr(source, "is_dm", False):
             return True
         bot = getattr(self, "_bot_user_id", None)
-        return bool(bot and f"<@{bot}>" in (getattr(event, "text", "") or ""))
+        text = " ".join(filter(None, [getattr(event, "text", "") or "", _raw_slack_text(event)]))
+        return bool(bot and f"<@{bot}>" in text)
 
     async def _fetch_reply_media_refs(self, reply_id: str) -> list[dict]:
         return []
@@ -147,6 +155,30 @@ class SlackTagAdapter(TagAdapterMixin, SlackAdapter):
 
 def _chat_id_from(event: Any) -> str:
     return str(getattr(getattr(event, "source", None), "chat_id", "") or getattr(event, "chat_id", ""))
+
+
+def _raw_slack_text(event: Any) -> str:
+    raw = getattr(event, "raw_message", None)
+    if isinstance(raw, dict):
+        return str(raw.get("text") or "")
+    return str(getattr(raw, "text", "") or "")
+
+
+def _native_slack_command(event: Any) -> str:
+    raw = getattr(event, "raw_message", None)
+    if isinstance(raw, dict):
+        return str(raw.get("command") or "")
+    return str(getattr(raw, "command", "") or "")
+
+
+def _is_native_slack_command(event: Any) -> bool:
+    return bool(_native_slack_command(event).startswith("/"))
+
+
+def _is_tag_command(event: Any) -> bool:
+    command = _native_slack_command(event).lstrip("/")
+    text = (getattr(event, "text", "") or "").strip()
+    return command in {"tag", "standing", "admin"} or text == "/tag" or text.startswith(("/tag ", "/standing", "/admin"))
 
 
 def check_requirements() -> bool:
