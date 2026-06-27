@@ -66,28 +66,16 @@ class ContextSelector:
         # downloaded — a text/failed/preview-only parent must still narrow the evidence set.
         candidates = [self._candidate(event, row) for row in recent_rows]
         excluded: list[tuple[str, str]] = []
-        anchor_id = getattr(event, "reply_to_message_id", None) or self._thread_id(event)
-        if anchor_id and str(anchor_id) == str(getattr(event, "message_id", "")):
+        explicit_reply_id = getattr(event, "reply_to_message_id", None)
+        thread_id = self._thread_id(event)
+        if thread_id and str(thread_id) == str(getattr(event, "message_id", "")):
             # ponytail: Slack top-level messages use their own ts as synthetic thread_id.
-            anchor_id = None
-        if anchor_id:
-            anchor = str(anchor_id)
-            anchor_candidates = [
-                candidate
-                for candidate in candidates
-                if candidate.message_id == anchor or str(candidate.row["thread_id"] or "") == anchor
-            ]
-            for candidate in candidates:
-                if candidate not in anchor_candidates:
-                    excluded.append((candidate.message_id, "focused_reply:anchor"))
-            return ContextPack(
-                "focused_reply",
-                True,
-                [candidate.row for candidate in anchor_candidates],
-                [candidate.row for candidate in anchor_candidates if self._has_media(candidate.row)],
-                list(memory_rows),
-                excluded,
-            )
+            thread_id = None
+        if explicit_reply_id:
+            anchor_pack = self._anchor_pack("focused_reply", explicit_reply_id, candidates, list(memory_rows), "focused_reply:anchor", True)
+            return anchor_pack
+        if thread_id:
+            return self._anchor_pack("thread", thread_id, candidates, list(memory_rows), "thread:anchor", False)
 
         marker = deixis(getattr(event, "text", "") or "")
         if marker:
@@ -120,6 +108,23 @@ class ContextSelector:
             [candidate.row for candidate in text_candidates[:TEXT_BACKGROUND_LIMIT]],
             [],
             list(memory_rows),
+            excluded,
+        )
+
+    def _anchor_pack(self, scope: str, anchor_id: str, candidates: list[ContextCandidate], memory_rows: list, excluded_reason: str, explicit: bool) -> ContextPack:
+        anchor = str(anchor_id)
+        anchor_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.message_id == anchor or str(candidate.row["thread_id"] or "") == anchor
+        ]
+        excluded = [(candidate.message_id, excluded_reason) for candidate in candidates if candidate not in anchor_candidates]
+        return ContextPack(
+            scope,
+            explicit,
+            [candidate.row for candidate in anchor_candidates],
+            [candidate.row for candidate in anchor_candidates if self._has_media(candidate.row)],
+            memory_rows,
             excluded,
         )
 

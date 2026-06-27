@@ -16,7 +16,7 @@ Each enabled chat gets one shared agent identity. The agent answers only when @-
 
 Shipped now: bounded chat evidence, Tier-0/Tier-1 memory, admin lifecycle, and redacted audit. Roadmap: broader Slack parity and deeper connector/source-binding work.
 
-The `ContextSelector` chooses bounded evidence with `focused_reply`, `deictic_recent`, and `plain` scopes instead of dumping the transcript. That means no full-history RAG and no ambient auto-answering; admins keep audit and lifecycle control over retained memory.
+The `ContextSelector` chooses bounded evidence with `focused_reply`, `thread`, `deictic_recent`, and `plain` scopes instead of dumping the transcript. That means no full-history RAG and no ambient auto-answering; admins keep audit and lifecycle control over retained memory.
 
 This repository is `hermes-tag`; the Python/pip package and manifest name are `hermes-tag`.
 
@@ -79,6 +79,7 @@ In groups, `/tag` commands require @-mention.
 | Context scope | Meaning |
 | --- | --- |
 | `focused_reply` | Explicit reply -> narrow to that parent as evidence. |
+| `thread` | Real thread without explicit reply -> narrow to that thread as evidence. |
 | `deictic_recent` | "上面那张图" / "the image above" -> nearest recent media. |
 | `plain` | Bounded recent text. |
 

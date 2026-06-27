@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ensure a Hermes Slack manifest contains the /tag slash command."""
+"""Emit a Slack manifest with /tag plus a ready slack_tag config block."""
 from __future__ import annotations
 
 import json
@@ -15,9 +15,71 @@ TAG_COMMAND = {
 }
 
 
+BASE_MANIFEST = {
+    "display_information": {"name": "Hermes Tag"},
+    "features": {"bot_user": {"display_name": "Hermes Tag", "always_online": True}, "slash_commands": []},
+    "oauth_config": {
+        "scopes": {
+            "bot": [
+                "app_mentions:read",
+                "channels:history",
+                "channels:read",
+                "chat:write",
+                "commands",
+                "files:read",
+                "groups:history",
+                "groups:read",
+                "im:history",
+                "im:read",
+                "mpim:history",
+                "reactions:read",
+                "reactions:write",
+                "users:read",
+            ]
+        }
+    },
+    "settings": {
+        "event_subscriptions": {
+            "bot_events": [
+                "app_mention",
+                "message.channels",
+                "message.groups",
+                "message.im",
+                "message.mpim",
+                "file_shared",
+                "reaction_added",
+                "reaction_removed",
+            ]
+        },
+        "socket_mode_enabled": True,
+        "org_deploy_enabled": False,
+        "token_rotation_enabled": False,
+    },
+}
+
+CONFIG_BLOCK = """\
+
+--- slack_tag config ---
+platforms:
+  slack:
+    enabled: true
+    require_mention: false
+    extra:
+      slack_tag:
+        enabled: true
+        enabled_chats:
+          - C_TEST_CHANNEL_ID
+        admins:
+          - U_YOUR_USER_ID
+        encryption_posture: plaintext-db-on-local-disk
+        db_path: ~/.hermes/profiles/shiling-pm/slack-tag.sqlite3
+        media_cache_dir: ~/.hermes/profiles/shiling-pm/slack-tag-media
+"""
+
+
 def main() -> int:
-    path = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/hermes-slack-manifest.json")
-    manifest = json.loads(path.read_text())
+    path = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else None
+    manifest = json.loads(path.read_text()) if path and path.exists() else json.loads(json.dumps(BASE_MANIFEST))
     scopes = manifest.setdefault("oauth_config", {}).setdefault("scopes", {}).setdefault("bot", [])
     if "commands" not in scopes:
         scopes.append("commands")
@@ -31,8 +93,13 @@ def main() -> int:
         commands.append(TAG_COMMAND)
     if len(commands) > 50:
         raise SystemExit(f"too many Slack slash commands: {len(commands)}")
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-    print(f"ok: /tag present, {len(commands)} slash commands, commands scope present")
+    output = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+    if path:
+        path.write_text(output)
+        print(f"ok: wrote {path}; /tag present, {len(commands)} slash commands, commands scope present")
+    else:
+        print(output, end="")
+    print(CONFIG_BLOCK, end="", file=sys.stderr)
     return 0
 
 

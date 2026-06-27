@@ -285,8 +285,22 @@ class Tier0ContextV2Test(unittest.TestCase):
         self.assertEqual(len(out.media_urls),1)
         audits=[r for r in a.store.audit_events("chat-a") if r["event"]=="enhance_event"]
         detail=json.loads(audits[-1]["detail"])
-        self.assertEqual(detail["scope"],"focused_reply")
+        self.assertEqual(detail["scope"],"thread")
+        self.assertFalse(detail["has_explicit_anchor"])
         self.assertTrue(detail["reanchored"])
+
+    def test_explicit_reply_precedes_thread_scope(self):
+        a=FeishuTagAdapter(PlatformConfig(), cfg(max_context_chars=500))
+        asyncio.run(a._dispatch_inbound_event(event("reply parent","p1",user="Bob")))
+        asyncio.run(a._dispatch_inbound_event(event("thread sibling","t1",user="Bob")))
+        ask=event("what about this","m1",user="Alice",at=True,reply="p1")
+        ask.source.thread_id="t1"
+        asyncio.run(a._dispatch_inbound_event(ask))
+        detail=json.loads([r for r in a.store.audit_events("chat-a") if r["event"]=="enhance_event"][-1]["detail"])
+        self.assertEqual(detail["scope"],"focused_reply")
+        self.assertTrue(detail["has_explicit_anchor"])
+        self.assertIn("reply parent", a.dispatched[-1].channel_context)
+        self.assertNotIn("thread sibling", a.dispatched[-1].channel_context)
 
     def test_focused_reply_on_text_parent_suppresses_recent_media(self):
         a=MediaAdapter(PlatformConfig(), cfg(max_context_chars=500))

@@ -7,15 +7,20 @@ It is **code-complete and unit-verified**. Live workspace smoke evidence is trac
 ## 1. Create the Slack app (api.slack.com)
 
 Sign in to Slack in a browser, go to **https://api.slack.com/apps → Create New App → From an app manifest**,
-pick the test workspace. After `hermes-tag` is installed/enabled, prefer generating the full manifest from Hermes so plugin slash commands are included:
+pick the test workspace. Generate the manifest and copy the config block:
 
 ```sh
-hermes slack manifest --write /tmp/hermes-slack-manifest.json --name "Hermes Tag"
-python docs/slack-manifest-add-tag.py /tmp/hermes-slack-manifest.json
+python docs/slack-manifest-add-tag.py > /tmp/hermes-slack-manifest.json
 grep '"/tag"' /tmp/hermes-slack-manifest.json
 ```
 
-Paste `/tmp/hermes-slack-manifest.json` into **Features → App Manifest → Edit**. If you need a bootstrap manifest before Hermes is installed, use this minimal one and replace it with the generated manifest after plugin install:
+The command prints a complete Slack app manifest (including `/tag`) followed by a ready `slack_tag` config block. If you already have a Hermes-generated manifest, patch it in place instead:
+
+```sh
+python docs/slack-manifest-add-tag.py /tmp/hermes-slack-manifest.json
+```
+
+Paste the JSON manifest portion into **Features → App Manifest → Edit**. Manual bootstrap manifest for reference:
 
 ```yaml
 display_information:
@@ -120,7 +125,6 @@ cd ~/.hermes/plugins/hermes-tag && git checkout main && hermes --profile shiling
 ```
 
 ## Known v1 limitations
-- Reply/parent **media** on Slack is stubbed (`_fetch_reply_media_refs` returns `[]`). Text, mentions, Tier-0
-  context, main-channel replies, and `/tag` commands are wired. Slack file/thread media is a follow-up.
+- Slack media works for current/recent/buffered context. Only explicit replies to parents no longer in Tier-0 are not fetched yet; `slack_reply_media_unavailable` makes that edge case visible.
 - `receive_all` is hardcoded `True`; gate via `channels:history` scope + `require_mention: false`.
 - Native Slack slash commands require saving the generated Hermes Slack manifest after plugin install; Socket Mode handles delivery after Slack accepts the command.
