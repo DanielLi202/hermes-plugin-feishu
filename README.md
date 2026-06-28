@@ -8,10 +8,9 @@ Use Hermes to bring Claude-Tag-style capability to your Feishu/Lark (and Slack).
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg) ![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-blue.svg) ![hermes-agent: v2026.6.19](https://img.shields.io/badge/hermes--agent-v2026.6.19-blue.svg) ![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 
-<!-- hero GIF (record per docs/design/ GIF script, then uncomment):
-<p align="center"><img src="docs/demo.en.gif" alt="In a Lark group you post three charts, add a note, colleagues comment, then @ Hermes Tag — its in-thread answer cites the charts' originals, your note, and the relevant replies, while ignoring the unrelated chatter" width="720"></p>
--->
-*Demo (coming): in a Lark group you post three charts, add a note, colleagues comment, then @ it — and its in-thread answer cites the charts' originals, your note, and the relevant replies, while ignoring unrelated chatter.*
+<p align="center"><img src="docs/demo.en.gif" alt="In a Feishu/Lark group you post three charts, add a few notes, drop an unrelated 'Lunch at 12?' line, then @ Hermes Tag last — it answers in-thread with numbered key takeaways drawn from the charts' originals, your notes, and the relevant discussion, and flags the unrelated line as not a conclusion." width="760"></p>
+
+<p align="center"><sub>Real screen recording · <a href="docs/demo.en.mp4">HD MP4</a></sub></p>
 
 ## What it is
 
