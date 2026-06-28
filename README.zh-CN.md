@@ -53,6 +53,8 @@ Hermes Tag 是 Hermes 的一个 Claude-Tag 式**上下文选择层**，面向飞
 
 ## 快速开始（<60 秒）
 
+> **让 AI agent 来安装？** 把它指向 [llms.txt](llms.txt) 和 [AGENTS.md](AGENTS.md)——那些是为 agent 驱动的安装 / 配置写的。本 README 面向人类。
+
 ```bash
 hermes plugins install DanielLi202/hermes-tag
 ```

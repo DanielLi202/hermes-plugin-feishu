@@ -53,6 +53,8 @@ These pins are a project convention; Hermes has no enforced compatibility mechan
 
 ## Quickstart (<60s)
 
+> **Installing with an AI agent?** Point it at [llms.txt](llms.txt) and [AGENTS.md](AGENTS.md) — those are written for agent-driven install/config. This README is for humans.
+
 ```bash
 hermes plugins install DanielLi202/hermes-tag
 ```

@@ -2,6 +2,26 @@
 
 Hermes installs this plugin by cloning the repo; it does not install Python dependencies from `pyproject.toml`.
 
+## Install paths — who does what
+
+**Already running Hermes with Feishu?** Then a human has to do exactly one thing; an AI agent can do the rest.
+
+- **Human (once, approval-gated):** in the Feishu app's **权限管理 (Permissions)**, add the sensitive scope `im:message.group_msg` and get it approved by an org admin. This is the one step the installing developer usually cannot self-serve. Without it, @-driven Tier-1 memory still works, but unmentioned background context silently degrades.
+- **Agent:** install the plugin, write the config block, restart the gateway, and verify. See [AGENTS.md](AGENTS.md).
+
+**Don't have Hermes + Feishu yet?** Do the full Feishu console setup below first, then follow the path above.
+
+### Feishu console setup (from scratch — human, one-time)
+
+Do these on [open.feishu.cn](https://open.feishu.cn) (开发者后台). Console labels can shift between Feishu versions; if a label differs, match by intent.
+
+1. **创建企业自建应用 (create a custom app)** → record **App ID** and **App Secret** → set them as `FEISHU_APP_ID` / `FEISHU_APP_SECRET` in the Hermes environment.
+2. **添加应用能力 → 机器人 (enable the Bot capability).**
+3. **权限管理 (Permissions)** → add scopes: `im:message` (read messages + download media) and `im:message.group_msg` (**sensitive — requires org admin / security approval**; the one step a developer may not be able to self-serve).
+4. **事件订阅 (Event subscription)** → use **长连接 / long-connection (websocket)** delivery and subscribe to the message-receive event (`im.message.receive_v1`).
+5. **版本管理与发布 (Versions & release)** → create a version, set **可用范围 (availability)**, and release (org-admin approval may be required).
+6. **Add the bot to each pilot group** → record the group **chat_id** (`oc_...`), the **bot_open_id** (`ou_...`), and your **admin open_id** (`ou_...`).
+
 ## Required env
 
 Set these in the same environment as Hermes:
@@ -14,6 +34,8 @@ Set these in the same environment as Hermes:
 `lark-oapi==1.6.9` is expected from the pinned Hermes Feishu environment.
 
 ## Minimal config
+
+> Agents: prefer the annotated template in [AGENTS.md](AGENTS.md) §3 — it marks each field `AGENT-SET` vs `HUMAN-PROVIDED`. The block below is the same values without provenance markers.
 
 ```yaml
 plugins:
@@ -42,7 +64,7 @@ The plugin also accepts the legacy top-level `extra.feishu_tag` shape and bridge
 
 ## Slack config
 
-After installing/enabling `hermes-tag`, generate the Slack App Manifest from the same Hermes install so plugin slash commands such as `/tag` are included:
+After installing/enabling `hermes-tag`, generate the Slack App Manifest from the same Hermes install so plugin slash commands such as `/tag` are included. Run the commands below from the installed plugin's repo directory (where Hermes cloned `hermes-tag`); the `docs/slack-manifest-add-tag.py` path is relative to it:
 
 ```bash
 hermes slack manifest --write /tmp/hermes-slack-manifest.json --name "Hermes Tag"
@@ -68,8 +90,10 @@ platforms:
         admins:
           - U_YOUR_USER_ID
         encryption_posture: plaintext-db-on-local-disk
-        db_path: /Users/february/.hermes/profiles/PROFILE/slack-tag.sqlite3
-        media_cache_dir: /Users/february/.hermes/profiles/PROFILE/slack-tag-media
+        # db_path / media_cache_dir are optional — omit to use the per-profile defaults.
+        # Set ABSOLUTE paths only to override, e.g.:
+        #   db_path: /ABSOLUTE/PATH/slack-tag.sqlite3
+        #   media_cache_dir: /ABSOLUTE/PATH/slack-tag-media
 ```
 
 Native `/tag ...` works only after the Slack App manifest contains `/tag` and the gateway has restarted with the `hermes-tag` plugin loaded. Before the manifest save, Slackbot rejects `/tag` before Hermes sees it; before the gateway restart, Slack may accept `/tag` but report that the app did not respond. Use a leading space (` /tag admin count`) only as a temporary smoke fallback.
@@ -129,7 +153,7 @@ profile and Feishu IDs.
    ```
 
    A healthy start includes `Connected in websocket mode (feishu)` and
-   `Gateway running with 1 platform(s)`.
+   `Gateway running with N platform(s)` (N = 1 with Feishu only, 2 with Feishu + Slack).
 
 4. Verify mention gating.
 
