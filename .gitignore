@@ -8,3 +8,7 @@ __pycache__/
 :memory:
 :memory:.media/
 docs/token.md
+
+# local agent tooling (npx skills) — not project code
+.agents/
+skills-lock.json
