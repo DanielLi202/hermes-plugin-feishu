@@ -81,8 +81,9 @@ Full onboarding + live verification: see [after-install.md](after-install.md). S
 
 In groups, `/tag` commands require @-mention.
 
-- `/tag status`
-- `/tag admin count|clear|disable|audit`
+- `/tag status` -> reports whether Hermes Tag is enabled for the chat, the storage boundary, and the current encryption posture.
+- `/tag admin count` -> returns retained-state counts such as `tier0=... tier1=... standing_jobs=...`.
+- `/tag admin clear|disable|audit` -> clears plugin data, disables plugin storage for the chat, or returns redacted audit events.
 - `/tag standing add <schedule> <timezone> <description>` then `/tag standing confirm`
 - `/tag standing list|cancel <id>|pause <id>|enable <id>`
 
