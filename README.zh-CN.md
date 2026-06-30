@@ -81,7 +81,7 @@ platforms:
 
 在群里，`/tag` 命令需要 @ 机器人。
 
-- `/tag status` → 返回当前群是否启用 Hermes Tag、存储边界与当前加密姿态。
+- `/tag status` → 返回适配器平台、`receive_all` / `cron_delivery` 等能力标志，以及当前按群统计的指标。
 - `/tag admin count` → 返回保留状态计数，例如 `tier0=... tier1=... standing_jobs=...`。
 - `/tag admin clear|disable|audit` → 清除插件数据、停用该群的插件存储，或返回脱敏审计事件。
 - `/tag standing add <schedule> <timezone> <description>`，随后 `/tag standing confirm`
